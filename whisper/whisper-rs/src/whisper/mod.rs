@@ -107,13 +107,10 @@ trait Recognition {
                 })
             })
             .unwrap();
-        let inputs = as_ndtensor_view(mels.view()).unwrap().to_tensor();
-        let encoder_out = self
-            .get_encoder()
-            .run_one(inputs.view().into(), None)
-            .unwrap();
+        let inputs = as_ndtensor_view(mels.view()).unwrap();
+        let encoder_out = self.get_encoder().run_one(inputs.into(), None).unwrap();
         let result: NdTensor<f32, 3> = encoder_out.try_into().unwrap();
-        as_array_view(result.view()).unwrap().to_owned()
+        into_array(result)
     }
 
     fn get_initial_tokens(&self, prompt: Vec<i32>, language: &str) -> Vec<i32> {
