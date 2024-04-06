@@ -30,18 +30,6 @@ where
     })
 }
 
-/// Convert an RTen NdTensorView into an ndarray view.
-fn as_array_view<'a, T, const N: usize>(
-    view: NdTensorView<'a, T, N>,
-) -> Option<ArrayView<'a, T, Dim<[Ix; N]>>>
-where
-    Dim<[Ix; N]>: Dimension,
-    [usize; N]: Into<StrideShape<Dim<[Ix; N]>>>,
-{
-    view.data()
-        .map(|data| ArrayView::from_shape(view.shape(), data).unwrap())
-}
-
 /// Convert an owned RTen NdTensor into an ndarray array.
 fn into_array<T, const N: usize>(tensor: NdTensor<T, N>) -> Array<T, Dim<[Ix; N]>>
 where
@@ -364,7 +352,7 @@ impl Recognition for Whisper {
             .unwrap();
 
         let logits: NdTensor<f32, 3> = logits.try_into().unwrap();
-        let logits = as_array_view(logits.view()).unwrap().to_owned();
+        let logits = into_array(logits);
 
         let k1: NdTensor<f32, 3> = k1.try_into().unwrap();
         let k1 = into_array(k1);
