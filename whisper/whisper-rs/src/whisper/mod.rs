@@ -4,8 +4,8 @@ mod utils;
 
 use audio::{get_mel_filteres, read_audio};
 use ndarray::{
-    concatenate, s, Array, Array2, Array3, ArrayBase, ArrayView, Axis, Dim, Dimension, Ix,
-    OwnedRepr, StrideShape,
+    concatenate, s, Array, Array2, Array3, ArrayBase, ArrayView, ArrayView2, ArrayView3, Axis, Dim,
+    Dimension, Ix, OwnedRepr, StrideShape,
 };
 use ndarray_npy::NpzReader;
 use rten::{Input, Model, NodeId};
@@ -86,16 +86,13 @@ trait Recognition {
 
     fn inference_logits(
         &self,
-        tokens: Array<i32, Dim<[usize; 2]>>,
-        audio_features: ArrayBase<OwnedRepr<f32>, Dim<[usize; 3]>>,
-        kv_cache: KVCache,
+        tokens: ArrayView2<i32>,
+        audio_features: ArrayView3<f32>,
+        kv_cache: &KVCache,
         initial_token_length: usize,
-    ) -> (ArrayBase<OwnedRepr<f32>, Dim<[usize; 3]>>, KVCache);
+    ) -> (Array3<f32>, KVCache);
 
-    fn get_audio_features(
-        &self,
-        segments: Vec<Array2<f32>>,
-    ) -> ArrayBase<OwnedRepr<f32>, Dim<[usize; 3]>> {
+    fn get_audio_features(&self, segments: Vec<Array2<f32>>) -> Array3<f32> {
         let mels: Array3<f32> = segments
             .into_iter()
             .fold(None, |acc, array| {
@@ -142,7 +139,7 @@ trait Recognition {
 
     fn inference(
         &self,
-        audio_features: ArrayBase<OwnedRepr<f32>, Dim<[usize; 3]>>,
+        audio_features: ArrayView3<f32>,
         prompt: Vec<i32>,
         language: &str,
     ) -> Vec<i32> {
@@ -156,9 +153,9 @@ trait Recognition {
         for _ in 0..224 {
             let logits: ArrayBase<OwnedRepr<f32>, Dim<[usize; 3]>>;
             (logits, kv_cache) = self.inference_logits(
-                tokens.clone(),
-                audio_features.clone(),
-                kv_cache.clone(),
+                tokens.view(),
+                audio_features.view(),
+                &kv_cache,
                 initial_token_length,
             );
             let next_word = logits
@@ -222,11 +219,8 @@ trait Recognition {
 
         let mut result: Vec<i32> = vec![];
         for audio_feature in audio_features.axis_iter(Axis(0)) {
-            let tokens = self.inference(
-                audio_feature.to_owned().insert_axis(Axis(0)),
-                result.clone(),
-                language,
-            );
+            let audio_feature = audio_feature.insert_axis(Axis(0));
+            let tokens = self.inference(audio_feature, result.clone(), language);
             result.extend(tokens.clone());
         }
 
@@ -265,22 +259,22 @@ impl Recognition for Whisper {
 
     fn inference_logits(
         &self,
-        tokens: Array<i32, Dim<[usize; 2]>>,
-        audio_features: ArrayBase<OwnedRepr<f32>, Dim<[usize; 3]>>,
-        kv_cache: KVCache,
+        tokens: ArrayView2<i32>,
+        audio_features: ArrayView3<f32>,
+        kv_cache: &KVCache,
         initial_token_length: usize,
-    ) -> (ArrayBase<OwnedRepr<f32>, Dim<[usize; 3]>>, KVCache) {
+    ) -> (Array3<f32>, KVCache) {
         let offset = kv_cache.k1.shape()[1];
-        let mut tokens = tokens;
 
-        if tokens.shape()[1] > initial_token_length {
-            tokens = tokens.slice(s![.., -1]).to_owned().insert_axis(Axis(0));
-        }
+        let tokens = if tokens.shape()[1] > initial_token_length {
+            tokens.slice_move(s![.., -1]).insert_axis(Axis(0))
+        } else {
+            tokens
+        };
 
         let pos_emb = self
             .pos_emb
-            .slice(s![.., offset..offset + tokens.shape()[1], ..])
-            .to_owned();
+            .slice(s![.., offset..offset + tokens.shape()[1], ..]);
 
         let tokens_id = self.decoder.node_id("tokens").unwrap();
         let audio_features_id = self.decoder.node_id("audio_features").unwrap();
@@ -314,7 +308,7 @@ impl Recognition for Whisper {
 
         let tokens = as_ndtensor_view(tokens.view()).unwrap();
         let audio_features = as_ndtensor_view(audio_features.view()).unwrap();
-        let pos_emb = as_ndtensor_view(pos_emb.view()).unwrap();
+        let pos_emb = as_ndtensor_view(pos_emb).unwrap();
         let k1 = as_ndtensor_view(kv_cache.k1.view()).unwrap();
         let v1 = as_ndtensor_view(kv_cache.v1.view()).unwrap();
         let k2 = as_ndtensor_view(kv_cache.k2.view()).unwrap();
