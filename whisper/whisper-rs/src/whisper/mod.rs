@@ -17,6 +17,7 @@ use std::fs::File;
 use tokenizers::Tokenizer;
 use utils::{KVCache, Options};
 
+/// Convert an ndarray view into an RTen NdTensorView.
 fn as_ndtensor_view<'a, T, const N: usize>(
     view: ArrayView<'a, T, Dim<[Ix; N]>>,
 ) -> Option<NdTensorView<'a, T, N>>
@@ -29,6 +30,7 @@ where
     })
 }
 
+/// Convert an RTen NdTensorView into an ndarray view.
 fn as_array_view<'a, T, const N: usize>(
     view: NdTensorView<'a, T, N>,
 ) -> Option<ArrayView<'a, T, Dim<[Ix; N]>>>
@@ -38,6 +40,18 @@ where
 {
     view.data()
         .map(|data| ArrayView::from_shape(view.shape(), data).unwrap())
+}
+
+/// Convert an owned RTen NdTensor into an ndarray array.
+fn into_array<T, const N: usize>(tensor: NdTensor<T, N>) -> Array<T, Dim<[Ix; N]>>
+where
+    T: Clone,
+    Dim<[Ix; N]>: Dimension,
+    [usize; N]: Into<StrideShape<Dim<[Ix; N]>>>,
+{
+    let shape = tensor.shape();
+    let data = tensor.into_data();
+    Array::from_shape_vec(shape, data).unwrap()
 }
 
 pub struct Whisper {
@@ -301,38 +315,38 @@ impl Recognition for Whisper {
         let output_k6_id = self.decoder.node_id("output_k6").unwrap();
         let output_v6_id = self.decoder.node_id("output_v6").unwrap();
 
-        let tokens = as_ndtensor_view(tokens.view()).unwrap().to_tensor();
-        let audio_features = as_ndtensor_view(audio_features.view()).unwrap().to_tensor();
-        let pos_emb = as_ndtensor_view(pos_emb.view()).unwrap().to_tensor();
-        let k1 = as_ndtensor_view(kv_cache.k1.view()).unwrap().to_tensor();
-        let v1 = as_ndtensor_view(kv_cache.v1.view()).unwrap().to_tensor();
-        let k2 = as_ndtensor_view(kv_cache.k2.view()).unwrap().to_tensor();
-        let v2 = as_ndtensor_view(kv_cache.v2.view()).unwrap().to_tensor();
-        let k3 = as_ndtensor_view(kv_cache.k3.view()).unwrap().to_tensor();
-        let v3 = as_ndtensor_view(kv_cache.v3.view()).unwrap().to_tensor();
-        let k4 = as_ndtensor_view(kv_cache.k4.view()).unwrap().to_tensor();
-        let v4 = as_ndtensor_view(kv_cache.v4.view()).unwrap().to_tensor();
-        let k5 = as_ndtensor_view(kv_cache.k5.view()).unwrap().to_tensor();
-        let v5 = as_ndtensor_view(kv_cache.v5.view()).unwrap().to_tensor();
-        let k6 = as_ndtensor_view(kv_cache.k6.view()).unwrap().to_tensor();
-        let v6 = as_ndtensor_view(kv_cache.v6.view()).unwrap().to_tensor();
+        let tokens = as_ndtensor_view(tokens.view()).unwrap();
+        let audio_features = as_ndtensor_view(audio_features.view()).unwrap();
+        let pos_emb = as_ndtensor_view(pos_emb.view()).unwrap();
+        let k1 = as_ndtensor_view(kv_cache.k1.view()).unwrap();
+        let v1 = as_ndtensor_view(kv_cache.v1.view()).unwrap();
+        let k2 = as_ndtensor_view(kv_cache.k2.view()).unwrap();
+        let v2 = as_ndtensor_view(kv_cache.v2.view()).unwrap();
+        let k3 = as_ndtensor_view(kv_cache.k3.view()).unwrap();
+        let v3 = as_ndtensor_view(kv_cache.v3.view()).unwrap();
+        let k4 = as_ndtensor_view(kv_cache.k4.view()).unwrap();
+        let v4 = as_ndtensor_view(kv_cache.v4.view()).unwrap();
+        let k5 = as_ndtensor_view(kv_cache.k5.view()).unwrap();
+        let v5 = as_ndtensor_view(kv_cache.v5.view()).unwrap();
+        let k6 = as_ndtensor_view(kv_cache.k6.view()).unwrap();
+        let v6 = as_ndtensor_view(kv_cache.v6.view()).unwrap();
 
         let inputs: Vec<(NodeId, Input)> = vec![
-            (tokens_id, tokens.view().into()),
-            (audio_features_id, audio_features.view().into()),
-            (pos_emb_id, pos_emb.view().into()),
-            (k1_id, k1.view().into()),
-            (v1_id, v1.view().into()),
-            (k2_id, k2.view().into()),
-            (v2_id, v2.view().into()),
-            (k3_id, k3.view().into()),
-            (v3_id, v3.view().into()),
-            (k4_id, k4.view().into()),
-            (v4_id, v4.view().into()),
-            (k5_id, k5.view().into()),
-            (v5_id, v5.view().into()),
-            (k6_id, k6.view().into()),
-            (v6_id, v6.view().into()),
+            (tokens_id, tokens.into()),
+            (audio_features_id, audio_features.into()),
+            (pos_emb_id, pos_emb.into()),
+            (k1_id, k1.into()),
+            (v1_id, v1.into()),
+            (k2_id, k2.into()),
+            (v2_id, v2.into()),
+            (k3_id, k3.into()),
+            (v3_id, v3.into()),
+            (k4_id, k4.into()),
+            (v4_id, v4.into()),
+            (k5_id, k5.into()),
+            (v5_id, v5.into()),
+            (k6_id, k6.into()),
+            (v6_id, v6.into()),
         ];
 
         let [logits, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6] = self
@@ -362,34 +376,34 @@ impl Recognition for Whisper {
         let logits = as_array_view(logits.view()).unwrap().to_owned();
 
         let k1: NdTensor<f32, 3> = k1.try_into().unwrap();
-        let k1 = as_array_view(k1.view()).unwrap().to_owned();
+        let k1 = into_array(k1);
         let v1: NdTensor<f32, 3> = v1.try_into().unwrap();
-        let v1 = as_array_view(v1.view()).unwrap().to_owned();
+        let v1 = into_array(v1);
 
         let k2: NdTensor<f32, 3> = k2.try_into().unwrap();
-        let k2 = as_array_view(k2.view()).unwrap().to_owned();
+        let k2 = into_array(k2);
         let v2: NdTensor<f32, 3> = v2.try_into().unwrap();
-        let v2 = as_array_view(v2.view()).unwrap().to_owned();
+        let v2 = into_array(v2);
 
         let k3: NdTensor<f32, 3> = k3.try_into().unwrap();
-        let k3 = as_array_view(k3.view()).unwrap().to_owned();
+        let k3 = into_array(k3);
         let v3: NdTensor<f32, 3> = v3.try_into().unwrap();
-        let v3 = as_array_view(v3.view()).unwrap().to_owned();
+        let v3 = into_array(v3);
 
         let k4: NdTensor<f32, 3> = k4.try_into().unwrap();
-        let k4 = as_array_view(k4.view()).unwrap().to_owned();
+        let k4 = into_array(k4);
         let v4: NdTensor<f32, 3> = v4.try_into().unwrap();
-        let v4 = as_array_view(v4.view()).unwrap().to_owned();
+        let v4 = into_array(v4);
 
         let k5: NdTensor<f32, 3> = k5.try_into().unwrap();
-        let k5 = as_array_view(k5.view()).unwrap().to_owned();
+        let k5 = into_array(k5);
         let v5: NdTensor<f32, 3> = v5.try_into().unwrap();
-        let v5 = as_array_view(v5.view()).unwrap().to_owned();
+        let v5 = into_array(v5);
 
         let k6: NdTensor<f32, 3> = k6.try_into().unwrap();
-        let k6 = as_array_view(k6.view()).unwrap().to_owned();
+        let k6 = into_array(k6);
         let v6: NdTensor<f32, 3> = v6.try_into().unwrap();
-        let v6 = as_array_view(v6.view()).unwrap().to_owned();
+        let v6 = into_array(v6);
 
         let new_kv_cache = KVCache {
             k1,
