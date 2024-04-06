@@ -4,8 +4,8 @@ mod utils;
 
 use audio::{get_mel_filteres, read_audio};
 use ndarray::{
-    concatenate, s, Array, Array2, Array3, ArrayBase, ArrayView, ArrayView2, ArrayView3, Axis, Dim,
-    Dimension, Ix, OwnedRepr, StrideShape,
+    concatenate, s, Array, Array2, Array3, ArrayView, ArrayView2, ArrayView3, Axis, Dim, Dimension,
+    Ix, StrideShape,
 };
 use ndarray_npy::NpzReader;
 use rten::{Input, Model, NodeId};
@@ -46,7 +46,7 @@ pub struct Whisper {
     encoder: Model,
     decoder: Model,
     tokenizer: Tokenizer,
-    pos_emb: ArrayBase<OwnedRepr<f32>, Dim<[usize; 3]>>,
+    pos_emb: Array3<f32>,
     mel_filters: Array2<f32>,
     options: Options,
 }
@@ -64,7 +64,7 @@ trait Recognition {
 
     fn get_tokenizer(&self) -> &Tokenizer;
 
-    fn get_pos_emb(&self) -> &ArrayBase<OwnedRepr<f32>, Dim<[usize; 3]>>;
+    fn get_pos_emb(&self) -> &Array3<f32>;
 
     fn get_mel_filters(&self) -> &Array2<f32>;
 
@@ -134,12 +134,11 @@ trait Recognition {
         let initial_tokens = self.get_initial_tokens(prompt, language);
         let initial_token_length = initial_tokens.len();
 
-        let mut tokens: Array<i32, Dim<[usize; 2]>> =
-            Array::from_vec(initial_tokens).insert_axis(Axis(0));
+        let mut tokens: Array2<i32> = Array::from_vec(initial_tokens).insert_axis(Axis(0));
         let mut kv_cache = self.get_default_kvcache();
 
         for _ in 0..224 {
-            let logits: ArrayBase<OwnedRepr<f32>, Dim<[usize; 3]>>;
+            let logits: Array3<f32>;
             (logits, kv_cache) = self.inference_logits(
                 tokens.view(),
                 audio_features.view(),
@@ -229,7 +228,7 @@ impl Recognition for Whisper {
         &self.tokenizer
     }
 
-    fn get_pos_emb(&self) -> &ArrayBase<OwnedRepr<f32>, Dim<[usize; 3]>> {
+    fn get_pos_emb(&self) -> &Array3<f32> {
         &self.pos_emb
     }
 
