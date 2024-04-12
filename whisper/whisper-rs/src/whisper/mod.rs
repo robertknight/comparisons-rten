@@ -8,7 +8,7 @@ use ndarray::{
     Ix, StrideShape,
 };
 use ndarray_npy::NpzReader;
-use rten::{Input, Model, NodeId};
+use rten::{Input, Model, NodeId, Output};
 use rten_tensor::prelude::*;
 use rten_tensor::{NdTensor, NdTensorView};
 use std::fmt;
@@ -75,7 +75,7 @@ trait Recognition {
     fn inference_logits(
         &self,
         tokens: ArrayView2<i32>,
-        audio_features: ArrayView3<f32>,
+        decoder_inputs: &[(NodeId, Output)],
         kv_cache: &KVCache,
         initial_token_length: usize,
     ) -> (Array3<f32>, KVCache);
@@ -137,11 +137,25 @@ trait Recognition {
         let mut tokens: Array2<i32> = Array::from_vec(initial_tokens).insert_axis(Axis(0));
         let mut kv_cache = self.get_default_kvcache();
 
+        // Precompute parts of the decoder graph that only depend on encoder
+        // outputs. This makes each decoder step much faster.
+        let decoder = self.get_decoder();
+        let logits_id = decoder.node_id("logits").unwrap();
+        let audio_features_id = decoder.node_id("audio_features").unwrap();
+        let audio_features_tensor = as_ndtensor_view(audio_features.view()).unwrap();
+        let decoder_inputs = decoder
+            .partial_run(
+                &[(audio_features_id, audio_features_tensor.into())],
+                &[logits_id],
+                None,
+            )
+            .expect("decoder run failed");
+
         for _ in 0..224 {
             let logits: Array3<f32>;
             (logits, kv_cache) = self.inference_logits(
                 tokens.view(),
-                audio_features.view(),
+                &decoder_inputs,
                 &kv_cache,
                 initial_token_length,
             );
@@ -247,7 +261,7 @@ impl Recognition for Whisper {
     fn inference_logits(
         &self,
         tokens: ArrayView2<i32>,
-        audio_features: ArrayView3<f32>,
+        decoder_inputs: &[(NodeId, Output)],
         kv_cache: &KVCache,
         initial_token_length: usize,
     ) -> (Array3<f32>, KVCache) {
@@ -264,7 +278,6 @@ impl Recognition for Whisper {
             .slice(s![.., offset..offset + tokens.shape()[1], ..]);
 
         let tokens_id = self.decoder.node_id("tokens").unwrap();
-        let audio_features_id = self.decoder.node_id("audio_features").unwrap();
         let pos_emb_id = self.decoder.node_id("pos_emb").unwrap();
         let k1_id = self.decoder.node_id("k1").unwrap();
         let v1_id = self.decoder.node_id("v1").unwrap();
@@ -294,7 +307,6 @@ impl Recognition for Whisper {
         let output_v6_id = self.decoder.node_id("output_v6").unwrap();
 
         let tokens = as_ndtensor_view(tokens.view()).unwrap();
-        let audio_features = as_ndtensor_view(audio_features.view()).unwrap();
         let pos_emb = as_ndtensor_view(pos_emb).unwrap();
         let k1 = as_ndtensor_view(kv_cache.k1.view()).unwrap();
         let v1 = as_ndtensor_view(kv_cache.v1.view()).unwrap();
@@ -309,9 +321,9 @@ impl Recognition for Whisper {
         let k6 = as_ndtensor_view(kv_cache.k6.view()).unwrap();
         let v6 = as_ndtensor_view(kv_cache.v6.view()).unwrap();
 
-        let inputs: Vec<(NodeId, Input)> = vec![
+        // Add the inputs which change on each decoder iteration.
+        let mut inputs: Vec<(NodeId, Input)> = vec![
             (tokens_id, tokens.into()),
-            (audio_features_id, audio_features.into()),
             (pos_emb_id, pos_emb.into()),
             (k1_id, k1.into()),
             (v1_id, v1.into()),
@@ -326,6 +338,13 @@ impl Recognition for Whisper {
             (k6_id, k6.into()),
             (v6_id, v6.into()),
         ];
+
+        // Add the inputs which are constant while decoding a chunk of audio.
+        inputs.extend(
+            decoder_inputs
+                .iter()
+                .map(|(node_id, output)| (*node_id, output.into())),
+        );
 
         let [logits, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6] = self
             .decoder
