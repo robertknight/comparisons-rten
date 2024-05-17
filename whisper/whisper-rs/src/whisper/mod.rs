@@ -12,7 +12,6 @@ use rten::{Input, Model, NodeId, Output};
 use rten_tensor::prelude::*;
 use rten_tensor::{NdTensor, NdTensorView};
 use std::fmt;
-use std::fs;
 use std::fs::File;
 use tokenizers::Tokenizer;
 use utils::{KVCache, Options};
@@ -429,8 +428,8 @@ impl Whisper {
         pos_emb_path: &str,
         mel_filters_path: &str,
     ) -> Whisper {
-        let encoder = Model::load(&fs::read(encoder_path).unwrap()).unwrap();
-        let decoder = Model::load(&fs::read(decoder_path).unwrap()).unwrap();
+        let encoder = Model::load_file(encoder_path).unwrap();
+        let decoder = Model::load_file(decoder_path).unwrap();
         let tokenizer = Tokenizer::new(tokenizer_path);
         let pos_emb = {
             let file = File::open(pos_emb_path).expect("Failed to open file");
