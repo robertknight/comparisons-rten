@@ -8,7 +8,7 @@ use ndarray::{
     Ix, StrideShape,
 };
 use ndarray_npy::NpzReader;
-use rten::{Input, Model, NodeId, Output};
+use rten::{InputOrOutput, Model, NodeId, Output};
 use rten_tensor::prelude::*;
 use rten_tensor::{NdTensor, NdTensorView};
 use std::fmt;
@@ -144,7 +144,7 @@ trait Recognition {
         let audio_features_tensor = as_ndtensor_view(audio_features.view()).unwrap();
         let decoder_inputs = decoder
             .partial_run(
-                &[(audio_features_id, audio_features_tensor.into())],
+                vec![(audio_features_id, audio_features_tensor.into())],
                 &[logits_id],
                 None,
             )
@@ -321,7 +321,7 @@ impl Recognition for Whisper {
         let v6 = as_ndtensor_view(kv_cache.v6.view()).unwrap();
 
         // Add the inputs which change on each decoder iteration.
-        let mut inputs: Vec<(NodeId, Input)> = vec![
+        let mut inputs: Vec<(NodeId, InputOrOutput)> = vec![
             (tokens_id, tokens.into()),
             (pos_emb_id, pos_emb.into()),
             (k1_id, k1.into()),
@@ -348,7 +348,7 @@ impl Recognition for Whisper {
         let [logits, k1, v1, k2, v2, k3, v3, k4, v4, k5, v5, k6, v6] = self
             .decoder
             .run_n(
-                &inputs,
+                inputs,
                 [
                     logits,
                     output_k1_id,
